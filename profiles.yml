@@ -1,0 +1,38 @@
+# Suchprofile.
+#
+# So kommst du an eine eigene "url":
+#   1. kleinanzeigen.de im Browser oeffnen
+#   2. Suche einstellen: Keyword, Kategorie, Ort + Umkreis, Preisspanne
+#   3. Die URL aus der Adresszeile hier einfuegen
+#
+# Zwei Dinge macht der Bot automatisch, du musst sie nicht in die URL bauen:
+#   - Sortierung nach Datum (neueste zuerst)
+#   - den Filter "anbieter:privat", solange private_only true ist
+#
+# Gelesen wird immer nur Seite 1. Nach Datum sortiert stehen dort genau die
+# neuen Anzeigen - alles Aeltere kennt der Bot vom vorherigen Durchlauf.
+#
+# Die Profile unten sind deutschlandweit. Fuer Abholware ersetzt du sie durch
+# deine eigene Umkreissuche, sonst bekommst du Deals aus 600 km Entfernung.
+
+defaults:
+  min_discount: 0.22       # mind. 22 % unter dem Median, sonst kein Post
+  min_score: 0.45          # Gesamtscore-Schwelle 0..1
+  min_profit_eur: 100      # erwarteter Rohgewinn nach Verhandlungsabschlag
+  max_price: 900           # harte Obergrenze (Kapitalbindung pro Stueck)
+  private_only: true       # gewerbliche Anbieter ignorieren
+  shipping_only: true      # nur Anzeigen mit "Versand moeglich"
+
+profiles:
+  - name: "PS5"
+    url: "https://www.kleinanzeigen.de/s-konsolen/ps5/k0c279"
+
+  - name: "Nintendo Switch"
+    url: "https://www.kleinanzeigen.de/s-konsolen/nintendo-switch/k0c279"
+
+  - name: "Xbox Series"
+    url: "https://www.kleinanzeigen.de/s-konsolen/xbox-series/k0c279"
+    min_discount: 0.28     # Xbox verkauft sich langsamer -> mehr Puffer
+
+  - name: "Steam Deck"
+    url: "https://www.kleinanzeigen.de/s-konsolen/steam-deck/k0c279"

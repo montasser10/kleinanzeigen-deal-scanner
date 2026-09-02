@@ -1,0 +1,107 @@
+name: Deal-Scan
+
+on:
+  schedule:
+    # GitHub-Cron laeuft ausschliesslich in UTC und kennt keine Zeitzonen.
+    # Berliner Zeit ist im Sommer UTC+2, im Winter UTC+1 - eine feste
+    # UTC-Uhrzeit wuerde also zweimal im Jahr um eine Stunde verrutschen.
+    # Loesung: beide Kandidaten feuern, der Gate-Schritt unten entscheidet
+    # anhand der echten Berliner Ortszeit, welcher davon durchlaeuft.
+    - cron: "0 10,11 * * 1-5"   # Mo-Fr: 12:00 Berlin
+    - cron: "0 10-19 * * 0,6"   # Sa+So: 12:00-20:00 Berlin, stuendlich
+  workflow_dispatch:
+
+# Ein zweiter Lauf waehrend eines laufenden wuerde sich beim State-Commit
+# in die Quere kommen.
+concurrency:
+  group: deal-scan
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: gate
+        name: Zeitfenster in Berliner Zeit pruefen
+        env:
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(ZoneInfo("Europe/Berlin"))
+          weekend = now.weekday() >= 5
+
+          if weekend:
+              # Stuendlich von 12 bis 20 Uhr. Der lange Scan-Loop deckt die
+              # Stunde fast vollstaendig ab, statt nur einen Schnappschuss
+              # zu machen - die guten Anzeigen sind nach Minuten weg.
+              wanted, loop, interval = 12 <= now.hour <= 20, 50, 180
+          else:
+              wanted, loop, interval = now.hour == 12, 12, 90
+
+          if os.environ.get("MANUAL") == "true":
+              wanted = True
+
+          print(f"run={'true' if wanted else 'false'}")
+          print(f"loop={loop}")
+          print(f"interval={interval}")
+          print(f"local={now:%a %d.%m.%Y %H:%M %Z}")
+          PY
+
+      - name: Uebersprungen
+        if: steps.gate.outputs.run != 'true'
+        run: |
+          echo "Ausserhalb des Zeitfensters (${{ steps.gate.outputs.local }}) - kein Scan."
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Abhaengigkeiten
+        if: steps.gate.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Scan
+        if: steps.gate.outputs.run == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LOOP_MINUTES: ${{ steps.gate.outputs.loop }}
+          SCAN_INTERVAL_SECONDS: ${{ steps.gate.outputs.interval }}
+        run: |
+          echo "Berliner Zeit: ${{ steps.gate.outputs.local }}"
+          python -m src.main
+
+      - name: Preisdaten zurueckschreiben
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          git config user.name "deal-bot"
+          git config user.email "deal-bot@users.noreply.github.com"
+          git add state/
+          if git diff --staged --quiet; then
+            echo "Keine neuen Daten."
+            exit 0
+          fi
+          git commit -m "chore(state): Preisbeobachtungen [skip ci]"
+          # Ein paralleler Lauf kann inzwischen gepusht haben.
+          for attempt in 1 2 3; do
+            if git pull --rebase --autostash && git push; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Push nach 3 Versuchen fehlgeschlagen." >&2
+          exit 1
