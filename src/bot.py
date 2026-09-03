@@ -13,6 +13,7 @@ fremder Chat darf diesen Bot nicht steuern.
 """
 from __future__ import annotations
 
+import argparse
 import html
 import subprocess
 import sys
@@ -214,11 +215,36 @@ def handle(settings: Settings, update: dict) -> None:
         say(settings, f"Fehler bei /{command}: {type(error).__name__}")
 
 
+def run_single(settings: Settings, command: str) -> int:
+    """Einen Befehl ausfuehren und beenden - fuer den Aufruf aus GitHub Actions.
+
+    Der Befehlsname kommt aus einer Telegram-Nachricht und ist damit
+    Fremdeingabe. Er wird ausschliesslich gegen HANDLERS geprueft, nie
+    interpretiert.
+    """
+    handler = HANDLERS.get(command.strip().lstrip("/").lower())
+    if handler is None:
+        log(f"Unbekannter Befehl: {command!r}")
+        return 1
+    handler(settings)
+    return 0
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Telegram-Listener")
+    parser.add_argument(
+        "--command",
+        help="einen Befehl ausfuehren und beenden, statt zu horchen",
+    )
+    args = parser.parse_args()
+
     settings = load_settings()
     if not settings.telegram_token or not settings.telegram_channel:
         print("TELEGRAM_BOT_TOKEN und TELEGRAM_CHANNEL_ID fehlen in .env")
         return 1
+
+    if args.command:
+        return run_single(settings, args.command)
 
     call(
         settings.telegram_token,

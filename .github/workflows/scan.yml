@@ -10,6 +10,10 @@ on:
     - cron: "0 10,11 * * 1-5"   # Mo-Fr: 12:00 Berlin
     - cron: "0 10-19 * * 0,6"   # Sa+So: 12:00-20:00 Berlin, stuendlich
   workflow_dispatch:
+  # Wird vom Cloudflare Worker ausgeloest, wenn in Telegram /scan ankommt.
+  # Ein solcher Lauf ignoriert das Zeitfenster und scannt genau einmal.
+  repository_dispatch:
+    types: [telegram-scan]
 
 # Ein zweiter Lauf waehrend eines laufenden wuerde sich beim State-Commit
 # in die Quere kommen.
@@ -31,7 +35,7 @@ jobs:
       - id: gate
         name: Zeitfenster in Berliner Zeit pruefen
         env:
-          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch' }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import os
@@ -73,8 +77,8 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: pip install -r requirements.txt
 
-      - name: Scan
-        if: steps.gate.outputs.run == 'true'
+      - name: Scan (Zeitplan)
+        if: steps.gate.outputs.run == 'true' && github.event_name != 'repository_dispatch'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
@@ -84,6 +88,20 @@ jobs:
         run: |
           echo "Berliner Zeit: ${{ steps.gate.outputs.local }}"
           python -m src.main
+
+      - name: Telegram-Befehl
+        if: github.event_name == 'repository_dispatch'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Ueber die Umgebung, nicht per ${{ }} in die Shell interpoliert -
+          # der Wert stammt aus einer Telegram-Nachricht. src.bot prueft ihn
+          # zusaetzlich gegen seine Befehlsliste.
+          COMMAND: ${{ github.event.client_payload.command }}
+        run: |
+          echo "Befehl aus Telegram: $COMMAND"
+          python -m src.bot --command "$COMMAND"
 
       - name: Preisdaten zurueckschreiben
         if: steps.gate.outputs.run == 'true'
