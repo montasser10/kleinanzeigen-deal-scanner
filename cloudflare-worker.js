@@ -59,6 +59,27 @@ async function dispatch(env, command) {
 
 export default {
   async fetch(request, env) {
+    // Diagnose: zeigt, welche Variablen der Worker sieht. Nur Namen und
+    // Laengen, niemals Werte - damit laesst sich eine fehlende oder falsch
+    // benannte Variable finden, ohne ein Geheimnis preiszugeben.
+    if (request.method === "GET") {
+      const names = [
+        "TELEGRAM_BOT_TOKEN",
+        "GITHUB_TOKEN",
+        "WEBHOOK_SECRET",
+        "GITHUB_REPO",
+        "ALLOWED_CHAT_ID",
+      ];
+      const status = {};
+      for (const name of names) {
+        const value = env[name];
+        status[name] = value ? `gesetzt (${String(value).length} Zeichen)` : "FEHLT";
+      }
+      return new Response(JSON.stringify(status, null, 2), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     if (request.method !== "POST") {
       return new Response("ok", { status: 200 });
     }
