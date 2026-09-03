@@ -30,15 +30,30 @@ from .models import Listing
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) "
+    "Gecko/20100101 Firefox/132.0",
 ]
 
 HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+              "image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.7,en;q=0.6",
+    "Accept-Encoding": "gzip, deflate, br",
     "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Referer": "https://www.kleinanzeigen.de/",
+    "Connection": "keep-alive",
 }
+
+RETRIES = 3
+RETRY_PAUSE = 6.0
 
 BLOCK_MARKERS = ("captcha", "zugriff verweigert", "access denied", "unusual traffic")
 
@@ -218,13 +233,23 @@ def fetch(
     Seite 1 reicht: nach Datum sortiert stehen dort genau die neuen Anzeigen,
     und alles Aeltere hat der Bot beim vorherigen Lauf schon gesehen.
     """
-    headers = {**HEADERS, "User-Agent": random.choice(USER_AGENTS)}
+    target = build_url(url, private_only, shipping_only)
+    response = None
 
-    with httpx.Client(follow_redirects=True, timeout=timeout, headers=headers) as client:
-        response = client.get(build_url(url, private_only, shipping_only))
+    # Ein 403 ist meist voruebergehend, kein dauerhafter Bann. Mit Pause und
+    # anderem User-Agent kommt der naechste Versuch oft durch - das ist
+    # deutlich billiger als ein abgebrochener Lauf.
+    for attempt in range(RETRIES):
+        headers = {**HEADERS, "User-Agent": random.choice(USER_AGENTS)}
+        with httpx.Client(follow_redirects=True, timeout=timeout, headers=headers) as client:
+            response = client.get(target)
+        if response.status_code not in (403, 429, 503):
+            break
+        if attempt < RETRIES - 1:
+            time.sleep(RETRY_PAUSE * (attempt + 1) + random.uniform(0, 2))
 
-    if response.status_code in (403, 429, 503):
-        raise BlockedError(f"HTTP {response.status_code} von Kleinanzeigen")
+    if response is None or response.status_code in (403, 429, 503):
+        raise BlockedError(f"HTTP {response.status_code} nach {RETRIES} Versuchen")
 
     body = response.text
     if any(marker in body[:6000].lower() for marker in BLOCK_MARKERS):

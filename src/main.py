@@ -62,10 +62,24 @@ def build_drafts(deals: list[Deal], settings: Settings) -> dict[str, tuple[str, 
     return fallback
 
 
-def scan_once(settings: Settings, store: Store, dump: bool) -> tuple[int, int]:
+# Ein einzelner 403 ist Rauschen - Kleinanzeigen weist gelegentlich ab und
+# laesst den naechsten Versuch durch. Erst wenn ein Profil zweimal
+# hintereinander scheitert, ist es eine Meldung wert. Und dann genau eine
+# pro Lauf: acht Durchlaeufe mal vier Profile waeren sonst 32 Nachrichten.
+ALERT_AFTER_FAILURES = 2
+
+
+def scan_once(
+    settings: Settings,
+    store: Store,
+    dump: bool,
+    block_state: dict[str, dict] | None = None,
+) -> tuple[int, int]:
     """Alle Profile einmal durchgehen. Gibt (neue Beobachtungen, Posts) zurueck."""
     new_observations = 0
     posted = 0
+    if block_state is None:
+        block_state = {}
 
     for profile in settings.profiles:
         try:
@@ -76,10 +90,21 @@ def scan_once(settings: Settings, store: Store, dump: bool) -> tuple[int, int]:
                 dump_name=profile.name.replace(" ", "_") if dump else None,
             )
         except scraper.BlockedError as error:
-            log(f"  {profile.name}: GEBLOCKT - {error}")
-            if settings.telegram_enabled:
+            state = block_state.setdefault(profile.name, {"streak": 0, "alerted": False})
+            state["streak"] += 1
+            log(f"  {profile.name}: GEBLOCKT ({state['streak']}x) - {error}")
+
+            if (
+                settings.telegram_enabled
+                and state["streak"] >= ALERT_AFTER_FAILURES
+                and not state["alerted"]
+            ):
+                state["alerted"] = True
                 notify.send_alert(
-                    f"Scraper geblockt bei '{profile.name}': {error}",
+                    f"Scraper geblockt bei '{profile.name}' "
+                    f"({state['streak']} Versuche): {error}\n"
+                    "Weitere Meldungen zu diesem Profil werden in diesem Lauf "
+                    "unterdrueckt.",
                     settings.telegram_token,
                     settings.telegram_channel,
                 )
@@ -87,6 +112,8 @@ def scan_once(settings: Settings, store: Store, dump: bool) -> tuple[int, int]:
         except Exception as error:  # noqa: BLE001 - ein Profil darf den Lauf nicht killen
             log(f"  {profile.name}: Fehler - {type(error).__name__}: {error}")
             continue
+
+        block_state.pop(profile.name, None)  # Erfolg beendet die Fehlerserie
 
         for listing in listings:
             classify(listing)
@@ -179,6 +206,7 @@ def main() -> int:
         f"LLM={'an' if settings.llm_enabled else 'aus'}"
     )
 
+    block_state: dict[str, dict] = {}
     deadline = time.monotonic() + settings.loop_minutes * 60
     total_observations = 0
     total_posts = 0
@@ -187,7 +215,7 @@ def main() -> int:
     while True:
         round_number += 1
         log(f"Durchlauf {round_number}")
-        observations, posts = scan_once(settings, store, args.dump)
+        observations, posts = scan_once(settings, store, args.dump, block_state)
         total_observations += observations
         total_posts += posts
 
