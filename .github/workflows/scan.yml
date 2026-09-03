@@ -7,8 +7,13 @@ on:
     # UTC-Uhrzeit wuerde also zweimal im Jahr um eine Stunde verrutschen.
     # Loesung: beide Kandidaten feuern, der Gate-Schritt unten entscheidet
     # anhand der echten Berliner Ortszeit, welcher davon durchlaeuft.
-    - cron: "0 10,11 * * 1-5"   # Mo-Fr: 12:00 Berlin
-    - cron: "0 10-19 * * 0,6"   # Sa+So: 12:00-20:00 Berlin, stuendlich
+    # Minute 17 und 47 statt 0: die volle Stunde ist der meistgenutzte
+    # Cron-Slot auf GitHub, dort werden Laeufe am staerksten verzoegert und
+    # unter Last auch verworfen. Zwei Termine pro Fenster sind Rueckversicherung -
+    # ein Doppellauf schadet nicht, weil bereits gemeldete Anzeigen
+    # uebersprungen werden.
+    - cron: "17,47 10,11 * * 1-5"   # Mo-Fr: 12:17 und 12:47 Berlin
+    - cron: "17 10-19 * * 0,6"      # Sa+So: 12:17-20:17 Berlin, stuendlich
   workflow_dispatch:
   # Wird vom Cloudflare Worker ausgeloest, wenn in Telegram /scan ankommt.
   # Ein solcher Lauf ignoriert das Zeitfenster und scannt genau einmal.
