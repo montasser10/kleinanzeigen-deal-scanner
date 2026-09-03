@@ -1,0 +1,6 @@
+# Die State-Dateien werden nur angehaengt - von GitHub Actions und lokal.
+# Ohne diese Regel kollidiert jede parallele Ergaenzung. "union" haengt
+# stattdessen beide Seiten aneinander; doppelte Zeilen raeumt prune() auf,
+# und Zeilen mit unlesbarem Zeitstempel (etwa eine zweite Kopfzeile)
+# ueberspringt der Leser ohnehin.
+state/*.csv merge=union

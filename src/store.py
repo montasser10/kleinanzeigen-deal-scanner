@@ -190,12 +190,17 @@ class Store:
     def prune(self) -> int:
         """Beobachtungen ausserhalb der Aufbewahrungsfrist entfernen."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
-        kept = []
+        kept, seen = [], set()
         for row in self._observations:
+            # Die union-Merge-Strategie kann Zeilen doppeln, wenn lokaler Lauf
+            # und GitHub-Job dieselbe Anzeige erfasst haben.
+            if row.get("ad_id") in seen:
+                continue
             try:
                 if datetime.fromisoformat(row["ts"]) >= cutoff:
+                    seen.add(row["ad_id"])
                     kept.append(row)
-            except ValueError:
+            except (ValueError, KeyError):
                 continue
 
         removed = len(self._observations) - len(kept)
