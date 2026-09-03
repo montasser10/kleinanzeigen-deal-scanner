@@ -68,6 +68,14 @@ class Store:
 
     # -- Lesen -------------------------------------------------------------
 
+    @property
+    def observation_count(self) -> int:
+        return len(self._observations)
+
+    @property
+    def posted_count(self) -> int:
+        return len(self._posted_ids)
+
     def already_posted(self, ad_id: str) -> bool:
         return ad_id in self._posted_ids
 

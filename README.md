@@ -247,6 +247,42 @@ kopierter Vorlagentext fällt Käufern auf und wirkt gewerblich.
 
 ---
 
+## Telegram-Befehle: `src/bot.py`
+
+Der Scanner allein verschickt nur — er hört nicht zu. Für Befehle braucht es
+einen Listener, der bei Telegram nach eingehenden Nachrichten fragt:
+
+```bash
+python -m src.bot
+```
+
+Solange das Fenster offen ist, reagiert der Bot auf:
+
+| Befehl | Wirkung |
+|---|---|
+| `/scan` | Sofort eine Suche starten, Treffer kommen wie gewohnt |
+| `/status` | Aktive Filter, Datenbasis, Anzahl gemeldeter Angebote |
+| `/preise` | Referenzpreise aller Modelle mit Anzahl der Vergleichswerte |
+| `/hilfe` | Befehlsübersicht |
+
+Die Befehle erscheinen in Telegram auch im Menü neben dem Eingabefeld
+(`setMyCommands` wird beim Start gesetzt).
+
+**Nur der konfigurierte Chat darf steuern.** Nachrichten aus anderen Chats
+werden protokolliert und verworfen — sonst könnte jeder, der den Bot findet,
+deine Suchen auslösen.
+
+**State-Abgleich mit GitHub.** Vor jedem `/scan` holt der Listener den Stand
+aus dem Repository, danach schreibt er ihn zurück. Ohne das würden lokaler
+Lauf und GitHub-Zeitplan getrennte Listen gemeldeter Anzeigen führen, und du
+bekämst dasselbe Angebot zweimal. Schlägt Git fehl (offline, kein Remote),
+läuft der Scan trotzdem — nur eben mit lokalem Stand.
+
+**Grenze:** Der Listener läuft nur, solange dein Rechner an ist. Der
+Zeitplan auf GitHub ist davon unabhängig und läuft weiter.
+
+---
+
 ## Aufbau
 
 | Datei | Zweck |
@@ -259,6 +295,7 @@ kopierter Vorlagentext fällt Käufern auf und wirkt gewerblich.
 | `src/notify.py` | Telegram-Ausgabe |
 | `src/sell.py` | Verkaufs-Assistent: Preisstrategie und Inserat-Vorlage |
 | `src/main.py` | Ablaufsteuerung und Scan-Schleife |
+| `src/bot.py` | Telegram-Listener für /scan, /status, /preise |
 | `selftest.py` | 40+ Prüfungen ohne Netzzugriff |
 | `state/*.csv` | Preisbeobachtungen und bereits gepostete Anzeigen |
 
